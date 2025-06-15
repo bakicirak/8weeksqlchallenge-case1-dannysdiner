@@ -1,0 +1,202 @@
+/* --------------------
+   Case Study Questions
+   --------------------*/
+
+/* ------------------------------
+   Case Study #1 - Danny's Diner
+   ------------------------------ */
+
+/* 
+1. What is the total amount each customer spent at the restaurant?
+*/
+SELECT 
+  s.customer_id,
+  SUM(m.price) AS total_spent
+FROM `weekchallenges.dannysdiner.sales` s
+JOIN `weekchallenges.dannysdiner.menu` m 
+  ON s.product_id = m.product_id
+GROUP BY s.customer_id;
+
+
+/*
+2. How many days has each customer visited the restaurant?
+*/
+SELECT
+  customer_id,
+  COUNT(DISTINCT order_date) AS visit_days
+FROM `weekchallenges.dannysdiner.sales`
+GROUP BY customer_id;
+
+
+/*
+3. What was the first item from the menu purchased by each customer?
+*/
+WITH ordered_sales AS (
+  SELECT
+    s.customer_id,
+    s.order_date,
+    m.product_name,
+    ROW_NUMBER() OVER (PARTITION BY s.customer_id ORDER BY s.order_date) AS rn
+  FROM `weekchallenges.dannysdiner.sales` s
+  JOIN `weekchallenges.dannysdiner.menu` m 
+    ON s.product_id = m.product_id
+)
+SELECT 
+  customer_id,
+  order_date, 
+  product_name
+FROM ordered_sales
+WHERE rn = 1
+ORDER BY customer_id;
+
+
+/*
+4. What is the most purchased item on the menu and how many times was it purchased by all customers?
+*/
+SELECT
+  m.product_name,
+  COUNT(*) AS times_purchased
+FROM `weekchallenges.dannysdiner.sales` s
+JOIN `weekchallenges.dannysdiner.menu` m 
+  ON s.product_id = m.product_id
+GROUP BY m.product_name
+ORDER BY times_purchased DESC
+LIMIT 1;
+
+
+/*
+5. Which item was the most popular for each customer?
+*/
+WITH item_counts AS (
+  SELECT
+    s.customer_id,
+    m.product_name,
+    COUNT(*) AS item_count
+  FROM `weekchallenges.dannysdiner.sales` s
+  JOIN `weekchallenges.dannysdiner.menu` m 
+    ON s.product_id = m.product_id
+  GROUP BY s.customer_id, m.product_name
+),
+max_item_counts AS (
+  SELECT
+    customer_id,
+    MAX(item_count) AS max_count
+  FROM item_counts
+  GROUP BY customer_id
+)
+SELECT
+  i.customer_id,
+  i.product_name,
+  i.item_count
+FROM item_counts i
+JOIN max_item_counts m 
+  ON i.customer_id = m.customer_id AND i.item_count = m.max_count
+ORDER BY i.customer_id;
+
+
+/*
+6. Which item was purchased first by the customer after they became a member?
+*/
+WITH post_membership_orders AS (
+  SELECT
+    m.customer_id,
+    s.product_id,
+    ROW_NUMBER() OVER (PARTITION BY m.customer_id ORDER BY s.order_date) AS rn
+  FROM `weekchallenges.dannysdiner.members` m
+  JOIN `weekchallenges.dannysdiner.sales` s 
+    ON m.customer_id = s.customer_id
+  WHERE s.order_date > m.join_date
+)
+SELECT 
+  o.customer_id,
+  menu.product_name
+FROM post_membership_orders o
+JOIN `weekchallenges.dannysdiner.menu` menu 
+  ON o.product_id = menu.product_id
+WHERE rn = 1
+ORDER BY customer_id;
+
+
+/*
+7. Which item was purchased just before the customer became a member?
+*/
+WITH pre_membership_orders AS (
+  SELECT
+    m.customer_id,
+    s.product_id,
+    ROW_NUMBER() OVER (PARTITION BY m.customer_id ORDER BY s.order_date DESC) AS rn
+  FROM `weekchallenges.dannysdiner.members` m
+  JOIN `weekchallenges.dannysdiner.sales` s 
+    ON m.customer_id = s.customer_id
+  WHERE s.order_date < m.join_date
+)
+SELECT 
+  o.customer_id,
+  menu.product_name
+FROM pre_membership_orders o
+JOIN `weekchallenges.dannysdiner.menu` menu 
+  ON o.product_id = menu.product_id
+WHERE rn = 1
+ORDER BY customer_id;
+
+
+/*
+8. What is the total items and amount spent for each member before they became a member?
+*/
+SELECT
+  s.customer_id,
+  COUNT(s.product_id) AS total_items,
+  SUM(menu.price) AS total_amount
+FROM `weekchallenges.dannysdiner.sales` s
+JOIN `weekchallenges.dannysdiner.members` m 
+  ON s.customer_id = m.customer_id
+  AND s.order_date < m.join_date
+JOIN `weekchallenges.dannysdiner.menu` menu 
+  ON s.product_id = menu.product_id
+GROUP BY s.customer_id;
+
+
+/*
+9. If each $1 spent = 10 points and sushi gives 2x points, how many points would each customer have?
+*/
+SELECT
+  s.customer_id,
+  SUM(CASE 
+        WHEN m.product_name = 'sushi' THEN 20 * m.price
+        ELSE 10 * m.price
+      END) AS total_points
+FROM `weekchallenges.dannysdiner.sales` s
+JOIN `weekchallenges.dannysdiner.menu` m 
+  ON s.product_id = m.product_id
+GROUP BY s.customer_id;
+
+
+/*
+10. In the first week after a customer joins (inclusive), they get 2x points on all items.
+How many points do customer A and B have at the end of January?
+*/
+WITH customer_dates AS (
+  SELECT 
+    customer_id, 
+    join_date,
+    DATE_ADD(join_date, INTERVAL 6 DAY) AS bonus_period_end,
+    DATE '2021-01-31' AS cutoff_date
+  FROM `weekchallenges.dannysdiner.members`
+  WHERE customer_id IN ('A', 'B')
+)
+SELECT 
+  s.customer_id,
+  SUM(
+    CASE
+      WHEN s.order_date BETWEEN d.join_date AND d.bonus_period_end THEN 2 * 10 * m.price
+      WHEN m.product_name = 'sushi' THEN 2 * 10 * m.price
+      ELSE 10 * m.price
+    END
+  ) AS total_points
+FROM `weekchallenges.dannysdiner.sales` s
+JOIN customer_dates d 
+  ON s.customer_id = d.customer_id
+  AND s.order_date <= d.cutoff_date
+JOIN `weekchallenges.dannysdiner.menu` m 
+  ON s.product_id = m.product_id
+GROUP BY s.customer_id;
