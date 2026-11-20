@@ -1,10 +1,9 @@
-/* --------------------
-   Case Study Questions
-   --------------------*/
-
-/* ------------------------------
-   Case Study #1 - Danny's Diner
-   ------------------------------ */
+/* ==========================================================================
+   Case Study #1 - Danny's Diner  (BigQuery Standard SQL)
+   Tables: sales, menu, members  (see schema.sql)
+   Ties are kept on purpose (RANK instead of ROW_NUMBER): when two items are
+   bought on the same day, picking one at random would hide a real answer.
+   ========================================================================== */
 
 /* 
 1. What is the total amount each customer spent at the restaurant?
@@ -36,18 +35,18 @@ WITH ordered_sales AS (
     s.customer_id,
     s.order_date,
     m.product_name,
-    ROW_NUMBER() OVER (PARTITION BY s.customer_id ORDER BY s.order_date) AS rn
+    DENSE_RANK() OVER (PARTITION BY s.customer_id ORDER BY s.order_date) AS rnk
   FROM `weekchallenges.dannysdiner.sales` s
   JOIN `weekchallenges.dannysdiner.menu` m 
     ON s.product_id = m.product_id
 )
-SELECT 
+SELECT DISTINCT
   customer_id,
   order_date, 
   product_name
 FROM ordered_sales
-WHERE rn = 1
-ORDER BY customer_id;
+WHERE rnk = 1   -- order_date has no time part: all items on the first visit count
+ORDER BY customer_id, product_name;
 
 
 /*
@@ -101,11 +100,11 @@ WITH post_membership_orders AS (
   SELECT
     m.customer_id,
     s.product_id,
-    ROW_NUMBER() OVER (PARTITION BY m.customer_id ORDER BY s.order_date) AS rn
+    RANK() OVER (PARTITION BY m.customer_id ORDER BY s.order_date) AS rn
   FROM `weekchallenges.dannysdiner.members` m
   JOIN `weekchallenges.dannysdiner.sales` s 
     ON m.customer_id = s.customer_id
-  WHERE s.order_date > m.join_date
+  WHERE s.order_date >= m.join_date   -- join day counts as a member purchase
 )
 SELECT 
   o.customer_id,
@@ -114,7 +113,7 @@ FROM post_membership_orders o
 JOIN `weekchallenges.dannysdiner.menu` menu 
   ON o.product_id = menu.product_id
 WHERE rn = 1
-ORDER BY customer_id;
+ORDER BY customer_id, menu.product_name;
 
 
 /*
@@ -124,7 +123,7 @@ WITH pre_membership_orders AS (
   SELECT
     m.customer_id,
     s.product_id,
-    ROW_NUMBER() OVER (PARTITION BY m.customer_id ORDER BY s.order_date DESC) AS rn
+    RANK() OVER (PARTITION BY m.customer_id ORDER BY s.order_date DESC) AS rn
   FROM `weekchallenges.dannysdiner.members` m
   JOIN `weekchallenges.dannysdiner.sales` s 
     ON m.customer_id = s.customer_id
@@ -137,7 +136,7 @@ FROM pre_membership_orders o
 JOIN `weekchallenges.dannysdiner.menu` menu 
   ON o.product_id = menu.product_id
 WHERE rn = 1
-ORDER BY customer_id;
+ORDER BY customer_id, menu.product_name;
 
 
 /*
@@ -157,7 +156,7 @@ GROUP BY s.customer_id;
 
 
 /*
-9. If each $1 spent = 10 points and sushi gives 2x points, how many points would each customer have?
+9. If each $1 spent = 10 points and sushi has a 2x points multiplier, how many points would each customer have?
 */
 SELECT
   s.customer_id,
